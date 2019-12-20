@@ -86,13 +86,13 @@
     "extends": "react-app",
     "globals": {
       "__DEV__": true
-    },
-    "rules": {
-      "react/prop-types": [
-        1
-      ]
     }
   },
+  "eslintIgnore": [
+    "umd/*",
+    "node_modules",
+    "/index.js"
+  ],
   "prettier": {
     "printWidth": 80,
     "semi": true,
