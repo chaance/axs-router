@@ -1,0 +1,13 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`match works 1`] = `
+Object {
+  "params": Object {
+    "bar": "hello",
+  },
+  "route": Object {
+    "path": "/foo/:bar",
+  },
+  "uri": "/foo/hello",
+}
+`;

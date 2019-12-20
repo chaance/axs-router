@@ -1,10 +1,46 @@
-import invariant from "invariant";
+import React, { Component } from 'react';
+import invariant from 'invariant';
+import {
+  DYNAMIC_POINTS,
+  PARAM_REGEX,
+  RESERVED_NAMES,
+  ROOT_POINTS,
+  SEGMENT_POINTS,
+  SPLAT_PENALTY,
+  STATIC_POINTS,
+} from './constants';
 
-////////////////////////////////////////////////////////////////////////////////
-// startsWith(string, search) - Check if `string` starts with `search`
-let startsWith = (string, search) => {
-  return string.substr(0, search.length) === search;
-};
+const canUseDOM = !!(
+  typeof window !== 'undefined' &&
+  window.document &&
+  window.document.createElement
+);
+
+function errorBoundary(Element, callback) {
+  return class ErrorBoundary extends Component {
+    componentDidCatch(error, info) {
+      callback(error, info);
+    }
+
+    render() {
+      return typeof Element === 'function' ? <Element /> : Element;
+    }
+  };
+}
+
+function isDynamic(segment) {
+  return PARAM_REGEX.test(segment);
+}
+
+function isRootSegment(segment) {
+  return segment === '';
+}
+
+function isSplat(segment) {
+  return segment && segment[0] === '*';
+}
+
+function noop() {}
 
 ////////////////////////////////////////////////////////////////////////////////
 // pick(routes, uri)
@@ -27,13 +63,13 @@ let startsWith = (string, search) => {
 //     { route, params, uri }
 //
 // I know, I should use TypeScript not comments for these types.
-let pick = (routes, uri) => {
+function pick(routes, uri) {
   let match;
   let default_;
 
-  let [uriPathname] = uri.split("?");
+  let [uriPathname] = uri.split('?');
   let uriSegments = segmentize(uriPathname);
-  let isRootUri = uriSegments[0] === "";
+  let isRootUri = uriSegments[0] === '';
   let ranked = rankRoutes(routes);
 
   for (let i = 0, l = ranked.length; i < l; i++) {
@@ -44,7 +80,7 @@ let pick = (routes, uri) => {
       default_ = {
         route,
         params: {},
-        uri
+        uri,
       };
       continue;
     }
@@ -62,11 +98,11 @@ let pick = (routes, uri) => {
         // Hit a splat, just grab the rest, and return a match
         // uri:   /files/documents/work
         // route: /files/*
-        const param = routeSegment.slice(1) || "*";
+        const param = routeSegment.slice(1) || '*';
         params[param] = uriSegments
           .slice(index)
           .map(decodeURIComponent)
-          .join("/");
+          .join('/');
         break;
       }
 
@@ -78,10 +114,10 @@ let pick = (routes, uri) => {
         break;
       }
 
-      let dynamicMatch = paramRe.exec(routeSegment);
+      let dynamicMatch = PARAM_REGEX.exec(routeSegment);
 
       if (dynamicMatch && !isRootUri) {
-        let matchIsNotReserved = reservedNames.indexOf(dynamicMatch[1]) === -1;
+        let matchIsNotReserved = RESERVED_NAMES.indexOf(dynamicMatch[1]) === -1;
         invariant(
           matchIsNotReserved,
           `<Router> dynamic segment "${dynamicMatch[1]}" is a reserved name. Please use a different name in path "${route.path}".`
@@ -101,127 +137,16 @@ let pick = (routes, uri) => {
       match = {
         route,
         params,
-        uri: "/" + uriSegments.slice(0, index).join("/")
+        uri: '/' + uriSegments.slice(0, index).join('/'),
       };
       break;
     }
   }
 
   return match || default_ || null;
-};
+}
 
-////////////////////////////////////////////////////////////////////////////////
-// match(path, uri) - Matches just one path to a uri, also lol
-let match = (path, uri) => pick([{ path }], uri);
-
-////////////////////////////////////////////////////////////////////////////////
-// resolve(to, basepath)
-//
-// Resolves URIs as though every path is a directory, no files.  Relative URIs
-// in the browser can feel awkward because not only can you be "in a directory"
-// you can be "at a file", too. For example
-//
-//     browserSpecResolve('foo', '/bar/') => /bar/foo
-//     browserSpecResolve('foo', '/bar') => /foo
-//
-// But on the command line of a file system, it's not as complicated, you can't
-// `cd` from a file, only directories.  This way, links have to know less about
-// their current path. To go deeper you can do this:
-//
-//     <Link to="deeper"/>
-//     // instead of
-//     <Link to=`{${props.uri}/deeper}`/>
-//
-// Just like `cd`, if you want to go deeper from the command line, you do this:
-//
-//     cd deeper
-//     # not
-//     cd $(pwd)/deeper
-//
-// By treating every path as a directory, linking to relative paths should
-// require less contextual information and (fingers crossed) be more intuitive.
-let resolve = (to, base) => {
-  // /foo/bar, /baz/qux => /foo/bar
-  if (startsWith(to, "/")) {
-    return to;
-  }
-
-  let [toPathname, toQuery] = to.split("?");
-  let [basePathname] = base.split("?");
-
-  let toSegments = segmentize(toPathname);
-  let baseSegments = segmentize(basePathname);
-
-  // ?a=b, /users?b=c => /users?a=b
-  if (toSegments[0] === "") {
-    return addQuery(basePathname, toQuery);
-  }
-
-  // profile, /users/789 => /users/789/profile
-  if (!startsWith(toSegments[0], ".")) {
-    let pathname = baseSegments.concat(toSegments).join("/");
-    return addQuery((basePathname === "/" ? "" : "/") + pathname, toQuery);
-  }
-
-  // ./         /users/123  =>  /users/123
-  // ../        /users/123  =>  /users
-  // ../..      /users/123  =>  /
-  // ../../one  /a/b/c/d    =>  /a/b/one
-  // .././one   /a/b/c/d    =>  /a/b/c/one
-  let allSegments = baseSegments.concat(toSegments);
-  let segments = [];
-  for (let i = 0, l = allSegments.length; i < l; i++) {
-    let segment = allSegments[i];
-    if (segment === "..") segments.pop();
-    else if (segment !== ".") segments.push(segment);
-  }
-
-  return addQuery("/" + segments.join("/"), toQuery);
-};
-
-////////////////////////////////////////////////////////////////////////////////
-// insertParams(path, params)
-let insertParams = (path, params) => {
-  let segments = segmentize(path);
-  return (
-    "/" +
-    segments
-      .map(segment => {
-        let match = paramRe.exec(segment);
-        return match ? params[match[1]] : segment;
-      })
-      .join("/")
-  );
-};
-
-let validateRedirect = (from, to) => {
-  let filter = segment => isDynamic(segment);
-  let fromString = segmentize(from)
-    .filter(filter)
-    .sort()
-    .join("/");
-  let toString = segmentize(to)
-    .filter(filter)
-    .sort()
-    .join("/");
-  return fromString === toString;
-};
-
-////////////////////////////////////////////////////////////////////////////////
-// Junk
-let paramRe = /^:(.+)/;
-
-let SEGMENT_POINTS = 4;
-let STATIC_POINTS = 3;
-let DYNAMIC_POINTS = 2;
-let SPLAT_PENALTY = 1;
-let ROOT_POINTS = 1;
-
-let isRootSegment = segment => segment === "";
-let isDynamic = segment => paramRe.test(segment);
-let isSplat = segment => segment && segment[0] === "*";
-
-let rankRoute = (route, index) => {
+function rankRoute(route, index) {
   let score = route.default
     ? 0
     : segmentize(route.path).reduce((score, segment) => {
@@ -233,45 +158,64 @@ let rankRoute = (route, index) => {
         return score;
       }, 0);
   return { route, score, index };
-};
+}
 
-let rankRoutes = routes =>
-  routes
+function rankRoutes(routes) {
+  return routes
     .map(rankRoute)
     .sort((a, b) =>
       a.score < b.score ? 1 : a.score > b.score ? -1 : a.index - b.index
     );
+}
 
-let segmentize = uri =>
-  uri
-    // strip starting/ending slashes
-    .replace(/(^\/+|\/+$)/g, "")
-    .split("/");
-
-let addQuery = (pathname, query) => pathname + (query ? `?${query}` : "");
-
-let reservedNames = ["uri", "path"];
+function segmentize(uri) {
+  return (
+    uri
+      // strip starting/ending slashes
+      .replace(/(^\/+|\/+$)/g, '')
+      .split('/')
+  );
+}
 
 /**
  * Shallow compares two objects.
  * @param {Object} obj1 The first object to compare.
  * @param {Object} obj2 The second object to compare.
  */
-const shallowCompare = (obj1, obj2) => {
+function shallowCompare(obj1, obj2) {
   const obj1Keys = Object.keys(obj1);
   return (
     obj1Keys.length === Object.keys(obj2).length &&
     obj1Keys.every(key => obj2.hasOwnProperty(key) && obj1[key] === obj2[key])
   );
-};
+}
+
+function shouldNavigate(event) {
+  return (
+    !event.defaultPrevented &&
+    event.button === 0 &&
+    !(event.metaKey || event.altKey || event.ctrlKey || event.shiftKey)
+  );
+}
+
+function startsWith(string, search) {
+  return string.substr(0, search.length) === search;
+}
+
+function stripSlashes(str) {
+  return str.replace(/(^\/+|\/+$)/g, '');
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 export {
-  startsWith,
+  canUseDOM,
+  errorBoundary,
+  isDynamic,
+  noop,
   pick,
-  match,
-  resolve,
-  insertParams,
-  validateRedirect,
-  shallowCompare
+  segmentize,
+  shallowCompare,
+  shouldNavigate,
+  startsWith,
+  stripSlashes,
 };

@@ -1,15 +1,12 @@
-let getLocation = source => {
-  const { pathname, search, hash } = source.location;
-  return {
-    pathname,
-    search,
-    hash,
-    state: source.history.state,
-    key: (source.history.state && source.history.state.key) || "initial"
-  };
-};
+import { canUseDOM } from './utils';
 
-let createHistory = (source, options) => {
+// global history - uses window.history as the source if available, otherwise a
+// memory history
+const globalHistory = createHistory(getSource());
+
+const { navigate } = globalHistory;
+
+function createHistory(source, options) {
   let listeners = [];
   let location = getLocation(source);
   let transitioning = false;
@@ -34,22 +31,22 @@ let createHistory = (source, options) => {
 
       let popstateListener = () => {
         location = getLocation(source);
-        listener({ location, action: "POP" });
+        listener({ location, action: 'POP' });
       };
 
-      source.addEventListener("popstate", popstateListener);
+      source.addEventListener('popstate', popstateListener);
 
       return () => {
-        source.removeEventListener("popstate", popstateListener);
+        source.removeEventListener('popstate', popstateListener);
         listeners = listeners.filter(fn => fn !== listener);
       };
     },
 
     navigate(to, { state, replace = false } = {}) {
-      if (typeof to === "number") {
+      if (typeof to === 'number') {
         source.history.go(to);
       } else {
-        state = { ...state, key: Date.now() + "" };
+        state = { ...state, key: Date.now() + '' };
         // try...catch iOS Safari limits to 100 pushState calls
         try {
           if (transitioning || replace) {
@@ -58,27 +55,26 @@ let createHistory = (source, options) => {
             source.history.pushState(state, null, to);
           }
         } catch (e) {
-          source.location[replace ? "replace" : "assign"](to);
+          source.location[replace ? 'replace' : 'assign'](to);
         }
       }
 
       location = getLocation(source);
       transitioning = true;
       let transition = new Promise(res => (resolveTransition = res));
-      listeners.forEach(listener => listener({ location, action: "PUSH" }));
+      listeners.forEach(listener => listener({ location, action: 'PUSH' }));
       return transition;
-    }
+    },
   };
-};
+}
 
-////////////////////////////////////////////////////////////////////////////////
 // Stores history entries in memory for testing or other platforms like Native
-let createMemorySource = (initialPath = "/") => {
-  let searchIndex = initialPath.indexOf("?");
+function createMemorySource(initialPath = '/') {
+  let searchIndex = initialPath.indexOf('?');
   let initialLocation = {
     pathname:
       searchIndex > -1 ? initialPath.substr(0, searchIndex) : initialPath,
-    search: searchIndex > -1 ? initialPath.substr(searchIndex) : ""
+    search: searchIndex > -1 ? initialPath.substr(searchIndex) : '',
   };
   let index = 0;
   let stack = [initialLocation];
@@ -101,34 +97,33 @@ let createMemorySource = (initialPath = "/") => {
         return states[index];
       },
       pushState(state, _, uri) {
-        let [pathname, search = ""] = uri.split("?");
+        let [pathname, search = ''] = uri.split('?');
         index++;
         stack.push({ pathname, search: search.length ? `?${search}` : search });
         states.push(state);
       },
       replaceState(state, _, uri) {
-        let [pathname, search = ""] = uri.split("?");
+        let [pathname, search = ''] = uri.split('?');
         stack[index] = { pathname, search };
         states[index] = state;
-      }
-    }
+      },
+    },
   };
-};
+}
 
-////////////////////////////////////////////////////////////////////////////////
-// global history - uses window.history as the source if available, otherwise a
-// memory history
-let canUseDOM = !!(
-  typeof window !== "undefined" &&
-  window.document &&
-  window.document.createElement
-);
-let getSource = () => {
+function getLocation(source) {
+  const { pathname, search, hash } = source.location;
+  return {
+    pathname,
+    search,
+    hash,
+    state: source.history.state,
+    key: (source.history.state && source.history.state.key) || 'initial',
+  };
+}
+
+function getSource() {
   return canUseDOM ? window : createMemorySource();
-};
+}
 
-let globalHistory = createHistory(getSource());
-let { navigate } = globalHistory;
-
-////////////////////////////////////////////////////////////////////////////////
-export { globalHistory, navigate, createHistory, createMemorySource };
+export { createHistory, createMemorySource, globalHistory, navigate };
