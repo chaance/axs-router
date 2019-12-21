@@ -107,7 +107,7 @@ class FocusHandlerImpl extends Component {
     return (
       <Comp
         style={{ outline: 'none', ...style }}
-        tabIndex="-1"
+        tabIndex={-1}
         ref={n => (this.node = n)}
         {...domProps}
       >
