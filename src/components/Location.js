@@ -1,16 +1,20 @@
-import React, { useContext, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import PropTypes from 'prop-types';
 import { LocationContext } from '../lib/context';
 import { globalHistory } from '../lib/history';
 import { isRedirect } from '../lib/redirect';
-// import { errorBoundary } from '../lib/utils';
+import { errorBoundary } from '../lib/utils';
 
-// TODO: Test!
 ////////////////////////////////////////////////////////////////////////////////
 
 // sets up a listener if there isn't one already so apps don't need to be
 // wrapped in some top level provider
-// eslint-disable-next-line react/prop-types
 function Location({ children }) {
   const context = useContext(LocationContext);
   return context ? (
@@ -20,89 +24,63 @@ function Location({ children }) {
   );
 }
 
-////////////////////////////////////////////////////////////////////////////////
+function LocationProviderImpl({ children, history = globalHistory }) {
+  const unmounted = useRef();
+  const getContext = useCallback(() => {
+    return {
+      navigate: history.navigate,
+      location: history.location,
+    };
+  }, [history]);
+  const [context, setContext] = useState(getContext());
 
-// Prop types assigned to LocationProvider
-// eslint-disable-next-line react/prop-types
-class LocationProvider extends React.Component {
-  static propTypes = {
-    history: PropTypes.object.isRequired,
-  };
+  useLayoutEffect(() => {
+    unmounted.current = false;
+    let unlisten = history.listen(() => {
+      Promise.resolve().then(() => {
+        // TODO: replace rAF with react deferred update API when it's ready
+        // https://github.com/facebook/react/issues/13306
+        requestAnimationFrame(() => {
+          if (!unmounted.current) {
+            setContext(getContext());
+          }
+        });
+      });
+    });
+    return () => {
+      unmounted.current = true;
+      unlisten();
+    };
+  }, [getContext, history]);
 
-  static defaultProps = {
-    history: globalHistory,
-  };
+  useLayoutEffect(() => {
+    history._onTransitionComplete();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [context.location]);
 
-  state = {
-    context: this.getContext(),
-    refs: { unlisten: null },
-  };
+  return (
+    <LocationContext.Provider value={context}>
+      {typeof children === 'function' ? children(context) : children || null}
+    </LocationContext.Provider>
+  );
+}
 
-  getContext() {
-    let {
-      props: {
-        history: { navigate, location },
-      },
-    } = this;
-    return { navigate, location };
-  }
-
-  componentDidCatch(error, info) {
+function LocationProvider({ history = globalHistory, ...props }) {
+  function handleError(error) {
     if (isRedirect(error)) {
-      let {
-        props: {
-          history: { navigate },
-        },
-      } = this;
+      let { navigate } = history;
       navigate(error.uri, { replace: true });
     } else {
       throw error;
     }
   }
 
-  componentDidUpdate(prevProps, prevState) {
-    if (prevState.context.location !== this.state.context.location) {
-      this.props.history._onTransitionComplete();
-    }
-  }
+  let Comp = errorBoundary(
+    <LocationProviderImpl history={history} {...props} />,
+    handleError
+  );
 
-  componentDidMount() {
-    let {
-      state: { refs },
-      props: { history },
-    } = this;
-    history._onTransitionComplete();
-    refs.unlisten = history.listen(() => {
-      Promise.resolve().then(() => {
-        // TODO: replace rAF with react deferred update API when it's ready https://github.com/facebook/react/issues/13306
-        requestAnimationFrame(() => {
-          if (!this.unmounted) {
-            this.setState(() => ({ context: this.getContext() }));
-          }
-        });
-      });
-    });
-  }
-
-  componentWillUnmount() {
-    let {
-      state: { refs },
-    } = this;
-    this.unmounted = true;
-    refs.unlisten();
-  }
-
-  render() {
-    let {
-      state: { context },
-      props: { children },
-    } = this;
-    return (
-      <LocationContext.Provider value={context}>
-        {typeof children === 'function' ? children(context) : children || null}
-      </LocationContext.Provider>
-    );
-  }
+  return <Comp />;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
